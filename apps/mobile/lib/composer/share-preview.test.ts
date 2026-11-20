@@ -13,11 +13,44 @@ describe("share preview", () => {
       fileName: null,
     });
   });
+  it("shows thumbnails for local photos without a specific MIME type", () => {
+    const camera = { uri: "content://photos/1", name: "camera.jpg", mimeType: null };
+    const screenshot = {
+      uri: "file:///shared/2",
+      name: "screenshot.PNG",
+      mimeType: "application/octet-stream",
+    };
+    const document = {
+      uri: "content://docs/3",
+      name: "notes.pdf",
+      mimeType: "application/octet-stream",
+    };
+    expect(sharePreview({ ...base, files: [camera, document, screenshot] })).toEqual({
+      text: "",
+      images: [camera, screenshot],
+      extraImages: 0,
+      fileCount: 1,
+      fileName: "notes.pdf",
+    });
+  });
+  it("does not infer thumbnails for a declared document, non-image extension, or remote URI", () => {
+    const preview = sharePreview({
+      ...base,
+      files: [
+        { uri: "content://docs/1", name: "not-a-photo.png", mimeType: "application/pdf" },
+        { uri: "content://docs/2", name: "photo.jpg.zip", mimeType: null },
+        { uri: "https://example.com/photo.jpg", name: "photo.jpg", mimeType: null },
+      ],
+    });
+    expect(preview.images).toEqual([]);
+    expect(preview.fileCount).toBe(3);
+    expect(preview.fileName).toBeNull();
+  });
   it("limits thumbnails and counts the remaining images separately from files", () => {
     const images = Array.from({ length: 6 }, (_, index) => ({
       uri: `content://photos/${index}`,
-      name: `${index}.png`,
-      mimeType: "image/png",
+      name: index === 0 ? "no-extension" : `${index}.png`,
+      mimeType: index % 2 === 0 ? "image/png" : null,
     }));
     const preview = sharePreview({
       ...base,
