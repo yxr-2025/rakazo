@@ -68,11 +68,12 @@ export function MentionPicker({
   onHighlight: (mention: ComposerMention) => void;
 }) {
   const { t } = useLingui();
-  const botNames = new Set<string>();
-  const groupNames = new Set<string>();
-  for (const mention of options) {
-    if (mention.kind === "bot") botNames.add(mention.name);
-    if (mention.kind === "group") groupNames.add(mention.name);
+  const firstKindByName = new Map<string, ComposerMention["kind"]>();
+  const crossKindNames = new Set<string>();
+  for (const { name, kind } of options) {
+    const firstKind = firstKindByName.get(name);
+    if (firstKind === undefined) firstKindByName.set(name, kind);
+    else if (firstKind !== kind) crossKindNames.add(name);
   }
   return (
     <div
@@ -85,11 +86,14 @@ export function MentionPicker({
       {options.map((mention, index) => {
         const optionId = `${listboxId}-option-${index}`;
         const highlighted = index === activeIndex;
-        const labelWithType = Boolean(
-          mention.subtitle &&
-            ((mention.kind === "bot" && groupNames.has(mention.name)) ||
-              (mention.kind === "group" && botNames.has(mention.name))),
-        );
+        const sameNameAcrossKinds = crossKindNames.has(mention.name);
+        // Schedules and connection status are visible details, not names of the option's type.
+        let explicitType: string | undefined;
+        if (sameNameAcrossKinds) {
+          if (mention.kind === "routine") explicitType = t`Routine`;
+          if (mention.kind === "connector") explicitType = t`Connector`;
+        }
+        const labelWithType = sameNameAcrossKinds && Boolean(explicitType ?? mention.subtitle);
         const nameId = `${optionId}-name`;
         const typeId = `${optionId}-type`;
         return (
@@ -118,9 +122,14 @@ export function MentionPicker({
               >
                 @{mention.name}
               </span>
+              {explicitType ? (
+                <span id={typeId} className="sr-only">
+                  {explicitType}
+                </span>
+              ) : null}
               {mention.subtitle ? (
                 <span
-                  id={labelWithType ? typeId : undefined}
+                  id={labelWithType && !explicitType ? typeId : undefined}
                   dir="auto"
                   className="block truncate text-body-sm text-muted-foreground"
                 >

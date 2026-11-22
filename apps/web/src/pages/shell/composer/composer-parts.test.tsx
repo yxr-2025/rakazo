@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import type { ComposerMention } from "@rakazo/core";
+import { buildComposerMentionOptions, mentionConnectorsFrom } from "@rakazo/core";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
@@ -71,6 +72,81 @@ it("uses the visible names and types of same-name bots and groups as option labe
     await act(async () => rows[1]?.click());
     expect(onPick).toHaveBeenCalledExactlyOnceWith(group);
     expect(onHighlight).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("announces the kind of a routine or connector that shares a bot's name", async () => {
+  const options = buildComposerMentionOptions({
+    query: "",
+    bots: [
+      { id: "bot-notes", name: "Weekly Notes" },
+      { id: "bot-notion", name: "Notion" },
+      { id: "bot-writer", name: "Writer" },
+    ],
+    groups: [],
+    routines: [
+      {
+        id: "routine-notes",
+        name: "Weekly Notes",
+        crons: ["0 9 * * 1"],
+        botId: "bot-notes",
+      },
+    ],
+    connectors: mentionConnectorsFrom(
+      [],
+      [
+        {
+          connectorId: "connector-notion",
+          slug: "notion",
+          name: "Notion",
+          connected: false,
+          noAuth: false,
+        },
+      ],
+    ),
+  });
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal("matchMedia", () => ({
+    matches: true,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
+  const host = document.body.appendChild(document.createElement("div"));
+  const root = createRoot(host);
+
+  try {
+    await act(async () =>
+      root.render(
+        <MentionPicker
+          listboxId="test-mentions"
+          options={options}
+          activeIndex={3}
+          onPick={vi.fn()}
+          onHighlight={vi.fn()}
+        />,
+      ),
+    );
+    const rows = [...host.querySelectorAll<HTMLButtonElement>('[role="option"]')];
+    expect(
+      rows.map((option) => {
+        const ids = option.getAttribute("aria-labelledby");
+        return ids
+          ? ids.split(" ").map((id) => document.getElementById(id)?.textContent)
+          : option.getAttribute("aria-label");
+      }),
+    ).toEqual([
+      ["@Weekly Notes", "Bot"],
+      ["@Notion", "Bot"],
+      "@Writer",
+      ["@Weekly Notes", "Routine"],
+      ["@Notion", "Connector"],
+    ]);
+    expect(rows[3]?.textContent).toContain("Every Monday at 9:00 AM");
+    expect(rows[4]?.textContent).toContain("Needs auth");
   } finally {
     await act(async () => root.unmount());
     host.remove();
