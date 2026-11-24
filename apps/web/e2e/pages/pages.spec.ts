@@ -222,7 +222,15 @@ test("a long Page scrolls in its chat card and opens from the preview", async ({
     .toBeGreaterThan(0);
   await expect(end).not.toBeInViewport();
 
+  await page.mouse.move(0, 0);
+  const hiddenScrollbar = "rgba(0, 0, 0, 0) rgba(0, 0, 0, 0)";
+  await expect(preview).toHaveCSS("scrollbar-color", hiddenScrollbar);
+  const previewWidth = await preview.evaluate((element) => element.clientWidth);
+  await captureScreenshot(page, testInfo, "page-chat-card-idle");
+
   await preview.hover();
+  await expect(preview).not.toHaveCSS("scrollbar-color", hiddenScrollbar);
+  expect(await preview.evaluate((element) => element.clientWidth)).toBe(previewWidth);
   await page.mouse.wheel(0, 170);
   await expect.poll(() => preview.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
 

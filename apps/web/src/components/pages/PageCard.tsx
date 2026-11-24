@@ -1,4 +1,5 @@
 import { Trans, useLingui } from "@lingui/react/macro";
+import { useTimeout } from "@rakazo/chat-ui/hooks";
 import type { PageVisibility } from "@rakazo/contracts";
 import { pageSharingLabel } from "@rakazo/i18n/page-review";
 import type { CSSProperties } from "react";
@@ -12,6 +13,7 @@ import { PageTileIcon } from "./page-icon";
 const PREVIEW_SCALE = 0.75;
 const PREVIEW_ASPECT = 630 / 1200;
 const FRAME_SIZE = `${100 / PREVIEW_SCALE}%`;
+const SCROLL_HINT_IDLE_MS = 250;
 
 /** The nearest ancestor that scrolls, so "near view" is measured along the chat, not the window. */
 function scrollParent(element: HTMLElement): HTMLElement | null {
@@ -44,7 +46,11 @@ function PagePreview({
   const box = useRef<HTMLDivElement>(null);
   const [live, setLive] = useState(false);
   const [pageHeight, setPageHeight] = useState<number | null>(null);
+  const [lastScroll, setLastScroll] = useState<number | null>(null);
+  const scrolling = lastScroll !== null;
   const drawn = pageHeight !== null;
+
+  useTimeout(() => setLastScroll(null), scrolling ? SCROLL_HINT_IDLE_MS : null, lastScroll);
 
   useEffect(() => {
     const element = box.current;
@@ -99,8 +105,10 @@ function PagePreview({
     >
       <div
         data-testid="page-card-preview"
+        data-scrolling={scrolling || undefined}
         tabIndex={-1}
-        className="rk-scroll absolute inset-0 overflow-hidden pointer-fine:pointer-events-auto pointer-fine:overflow-y-auto"
+        onScroll={(event) => setLastScroll(event.timeStamp)}
+        className="rk-scroll rk-page-preview absolute inset-0 overflow-hidden pointer-fine:pointer-events-auto pointer-fine:overflow-y-auto"
       >
         <div
           // Clip the frame's layout size before scaling so only its drawn size can scroll.
@@ -178,7 +186,7 @@ export function PageCard({
     <div
       data-testid="page-card"
       data-deleted={onOpen === undefined || undefined}
-      className="relative w-full max-w-[561px] overflow-hidden pointer-coarse:min-[900px]:max-w-[639px] rounded-[24px] bg-card ring-[0.5px] ring-border has-focus-visible:ring-2 has-focus-visible:ring-ring data-deleted:bg-transparent data-deleted:opacity-70"
+      className="group/page-card relative w-full max-w-[561px] overflow-hidden pointer-coarse:min-[900px]:max-w-[639px] rounded-[24px] bg-card ring-[0.5px] ring-border has-focus-visible:ring-2 has-focus-visible:ring-ring data-deleted:bg-transparent data-deleted:opacity-70"
     >
       {onOpen ? (
         <PagePreview
@@ -191,7 +199,9 @@ export function PageCard({
           }}
         />
       ) : null}
-      <div className="flex h-[73px] items-center gap-[14px] border-t border-foreground/[0.04] px-5 pointer-fine:relative">
+      <div
+        className={`flex h-[73px] items-center gap-[14px] border-t border-foreground/[0.04] px-5 pointer-fine:relative ${onOpen ? "motion-safe:transition-colors pointer-fine:group-hover/page-card:bg-foreground/[0.045] pointer-fine:has-focus-visible:bg-foreground/[0.045]" : ""}`}
+      >
         <PageTileIcon />
         <div className="min-w-0">
           <div className="relative top-[1px] truncate text-body-lg leading-[21px] text-foreground">
@@ -221,7 +231,7 @@ export function PageCard({
             type="button"
             aria-label={t`Open ${title}`}
             onClick={onOpen}
-            className="absolute inset-0 rounded-[24px] outline-none"
+            className="absolute inset-0 rounded-[24px] outline-none pointer-fine:cursor-pointer forced-colors:focus-visible:outline-2 forced-colors:focus-visible:-outline-offset-2 forced-colors:focus-visible:outline-solid"
           />
         ) : null}
       </div>

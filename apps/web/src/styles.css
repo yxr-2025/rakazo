@@ -95,6 +95,16 @@ body,
   background: var(--scrollbar-hover);
 }
 
+/* Keep the scrollbar gutter in place so showing the thumb never reflows the preview. */
+@media (hover: hover) and (pointer: fine) and (forced-colors: none) {
+  .rk-page-preview:not(:hover, [data-scrolling]) {
+    scrollbar-color: transparent transparent;
+  }
+  .rk-page-preview:not(:hover, [data-scrolling])::-webkit-scrollbar-thumb {
+    background: transparent;
+  }
+}
+
 .app-drag {
   -webkit-app-region: drag;
   user-select: none;
