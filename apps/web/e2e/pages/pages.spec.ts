@@ -215,6 +215,7 @@ test("a long Page scrolls in its chat card and opens from the preview", async ({
   const card = page.getByTestId("page-card").filter({ hasText: title });
   await expect(card).toBeVisible({ timeout: 30_000 });
   const preview = card.getByTestId("page-card-preview");
+  const fade = card.getByTestId("page-card-preview-fade");
   const end = pageFrame(page, title).getByText("Water the seedlings each morning.");
   await expect(end).toBeAttached();
   await expect
@@ -225,6 +226,8 @@ test("a long Page scrolls in its chat card and opens from the preview", async ({
   await page.mouse.move(0, 0);
   const hiddenScrollbar = "rgba(0, 0, 0, 0) rgba(0, 0, 0, 0)";
   await expect(preview).toHaveCSS("scrollbar-color", hiddenScrollbar);
+  await expect(fade).toBeVisible();
+  await expect(fade).toHaveCSS("height", "100px");
   const previewWidth = await preview.evaluate((element) => element.clientWidth);
   await captureScreenshot(page, testInfo, "page-chat-card-idle");
 
@@ -236,9 +239,14 @@ test("a long Page scrolls in its chat card and opens from the preview", async ({
 
   await page.mouse.wheel(0, 2_000);
   await expect(end).toBeInViewport();
+  await expect(fade).toBeHidden();
   const view = page.getByTestId("page-view");
   await expect(view).toBeHidden();
   await captureScreenshot(page, testInfo, "page-chat-card-scrolled");
+
+  await page.mouse.wheel(0, -170);
+  await expect(fade).toBeVisible();
+  await expect(fade).toHaveCSS("height", "100px");
 
   await preview.click();
   await expect(view).toBeVisible();

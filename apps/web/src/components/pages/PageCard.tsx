@@ -44,13 +44,30 @@ function PagePreview({
 }) {
   const { t } = useLingui();
   const box = useRef<HTMLDivElement>(null);
+  const scrollport = useRef<HTMLDivElement>(null);
+  const previewEnd = useRef<HTMLDivElement>(null);
   const [live, setLive] = useState(false);
   const [pageHeight, setPageHeight] = useState<number | null>(null);
+  const [atEnd, setAtEnd] = useState(false);
   const [lastScroll, setLastScroll] = useState<number | null>(null);
   const scrolling = lastScroll !== null;
   const drawn = pageHeight !== null;
 
   useTimeout(() => setLastScroll(null), scrolling ? SCROLL_HINT_IDLE_MS : null, lastScroll);
+
+  useEffect(() => {
+    const root = scrollport.current;
+    const end = previewEnd.current;
+    if (!drawn || !root || !end) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry) setAtEnd(entry.isIntersecting);
+      },
+      { root },
+    );
+    observer.observe(end);
+    return () => observer.disconnect();
+  }, [drawn]);
 
   useEffect(() => {
     const element = box.current;
@@ -60,6 +77,7 @@ function PagePreview({
       livePreviews.delete(key);
       setLive(false);
       setPageHeight(null);
+      setAtEnd(false);
     };
     const near = new IntersectionObserver(
       ([entry]) => {
@@ -104,6 +122,7 @@ function PagePreview({
       }
     >
       <div
+        ref={scrollport}
         data-testid="page-card-preview"
         data-scrolling={scrolling || undefined}
         tabIndex={-1}
@@ -132,6 +151,7 @@ function PagePreview({
             onMouseDown={(event) => event.preventDefault()}
             onClick={onOpen}
           />
+          <div ref={previewEnd} className="pointer-events-none absolute inset-x-0 bottom-0 h-px" />
         </div>
       </div>
       {drawn ? null : (
@@ -151,7 +171,11 @@ function PagePreview({
           ) : null}
         </div>
       )}
-      <div className="absolute inset-x-0 bottom-0 h-[100px] bg-linear-to-b from-transparent to-card" />
+      <div
+        data-testid="page-card-preview-fade"
+        data-at-end={(drawn && atEnd) || undefined}
+        className="absolute inset-x-0 bottom-0 h-[100px] bg-linear-to-b from-transparent to-card pointer-fine:data-at-end:hidden"
+      />
     </div>
   );
 }
