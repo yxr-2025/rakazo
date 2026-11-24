@@ -1,7 +1,8 @@
 import { Trans, useLingui } from "@lingui/react/macro";
 import type { PageVisibility } from "@rakazo/contracts";
 import { pageSharingLabel } from "@rakazo/i18n/page-review";
-import { useCallback, useEffect, useRef, useState } from "react";
+import type { CSSProperties } from "react";
+import { useEffect, useRef, useState } from "react";
 import { formatRelativeTime } from "../../lib/locale/relative-time";
 import { PageFrame } from "./PageFrame";
 import { PageTileIcon } from "./page-icon";
@@ -10,6 +11,7 @@ import { PageTileIcon } from "./page-icon";
 // Large enough that the preview's body text stays readable, not grey texture.
 const PREVIEW_SCALE = 0.75;
 const PREVIEW_ASPECT = 630 / 1200;
+const FRAME_SIZE = `${100 / PREVIEW_SCALE}%`;
 
 /** The nearest ancestor that scrolls, so "near view" is measured along the chat, not the window. */
 function scrollParent(element: HTMLElement): HTMLElement | null {
@@ -24,37 +26,34 @@ const LIVE_PREVIEWS = 24;
 const livePreviews = new Map<object, { near: boolean; drop: () => void }>();
 
 /**
- * The page's top, drawn live at `width / PREVIEW_SCALE` and scaled down. It mounts once the card
- * scrolls near view and keeps running until newer previews push it out of the live set, so a
- * long chat runs a bounded number of pages.
+ * Draw the scaled page in a fixed-size preview. The chat owns desktop scrolling and clicks,
+ * while the page frame stays inert. Only a bounded set of nearby previews runs live.
  */
 function PagePreview({
   document,
   title,
   failed,
+  onOpen,
 }: {
   document: string | null;
   title: string;
   failed: boolean;
+  onOpen: () => void;
 }) {
   const { t } = useLingui();
   const box = useRef<HTMLDivElement>(null);
-  const [size, setSize] = useState({ width: 0, height: 0 });
   const [live, setLive] = useState(false);
-  const [drawn, setDrawn] = useState(false);
-  const onDrawn = useCallback(() => setDrawn(true), []);
+  const [pageHeight, setPageHeight] = useState<number | null>(null);
+  const drawn = pageHeight !== null;
+
   useEffect(() => {
     const element = box.current;
     if (!element) return;
-    const resize = new ResizeObserver(([entry]) =>
-      setSize({ width: entry?.contentRect.width ?? 0, height: entry?.contentRect.height ?? 0 }),
-    );
-    resize.observe(element);
     const key = {};
     const drop = () => {
       livePreviews.delete(key);
       setLive(false);
-      setDrawn(false);
+      setPageHeight(null);
     };
     const near = new IntersectionObserver(
       ([entry]) => {
@@ -79,7 +78,6 @@ function PagePreview({
     );
     near.observe(element);
     return () => {
-      resize.disconnect();
       near.disconnect();
       livePreviews.delete(key);
     };
@@ -90,27 +88,48 @@ function PagePreview({
       aria-hidden="true"
       // A touch tablet card shows at least 335px of page however narrow the chat makes it.
       className="pointer-events-none relative w-full overflow-hidden bg-card pointer-coarse:min-[900px]:min-h-[335px]"
-      style={{ aspectRatio: `${1 / PREVIEW_ASPECT}` }}
+      style={
+        {
+          aspectRatio: `${1 / PREVIEW_ASPECT}`,
+          "--page-preview-height": `${Math.ceil((pageHeight ?? 0) * PREVIEW_SCALE)}px`,
+          "--page-preview-frame-size": FRAME_SIZE,
+          "--page-preview-touch-height": `calc(${FRAME_SIZE} + ${13 / PREVIEW_SCALE}px)`,
+        } as CSSProperties
+      }
     >
-      {live && document !== null && size.width > 0 ? (
+      <div
+        data-testid="page-card-preview"
+        tabIndex={-1}
+        className="rk-scroll absolute inset-0 overflow-hidden pointer-fine:pointer-events-auto pointer-fine:overflow-y-auto"
+      >
         <div
-          inert
-          // On a touch tablet the preview starts 13px further up the page.
-          className="absolute top-0 left-0 origin-top-left pointer-coarse:min-[900px]:-top-[13px]"
-          style={{
-            width: size.width / PREVIEW_SCALE,
-            // Taller than the box by that upward shift, so no blank strip shows below.
-            height: (size.height + 13) / PREVIEW_SCALE,
-            transform: `scale(${PREVIEW_SCALE})`,
-          }}
+          // Clip the frame's layout size before scaling so only its drawn size can scroll.
+          className="relative h-full overflow-clip pointer-fine:h-(--page-preview-height) pointer-fine:min-h-full"
         >
-          <PageFrame document={document} title={title} onHeight={onDrawn} />
+          {live && document !== null ? (
+            <div
+              inert
+              // Touch tablets start the preview 13px further up the page.
+              className="pointer-events-none absolute top-0 start-0 h-(--page-preview-touch-height) w-(--page-preview-frame-size) origin-top-left rtl:origin-top-right pointer-coarse:min-[900px]:-top-[13px] pointer-fine:h-(--page-preview-frame-size)"
+              style={{ transform: `scale(${PREVIEW_SCALE})` }}
+            >
+              <PageFrame document={document} title={title} onHeight={setPageHeight} />
+            </div>
+          ) : null}
+          {/* Keep the pointer target inside the scrollport, clear of its native scrollbar. */}
+          <button
+            type="button"
+            tabIndex={-1}
+            className="absolute inset-0 hidden pointer-fine:block"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={onOpen}
+          />
         </div>
-      ) : null}
+      </div>
       {drawn ? null : (
         // The page's shape until it draws, so the card never sits empty; still once it can't load.
         <div
-          className={`absolute inset-0 flex flex-col gap-3 bg-card px-6 pt-6 ${failed ? "" : "motion-safe:animate-pulse"}`}
+          className={`pointer-events-none absolute inset-0 flex flex-col gap-3 bg-card px-6 pt-6 ${failed ? "" : "motion-safe:animate-pulse"}`}
         >
           <div className="h-5 w-2/5 rounded-[6px] bg-foreground/[0.06]" />
           <div className="h-3 w-3/5 rounded-[5px] bg-foreground/[0.05]" />
@@ -152,6 +171,7 @@ export function PageCard({
   updated?: boolean;
 }) {
   const { t } = useLingui();
+  const openButton = useRef<HTMLButtonElement>(null);
   const when = updatedAt ? formatRelativeTime(updatedAt) : "";
   const sharing = pageSharingLabel(visibility);
   return (
@@ -160,8 +180,18 @@ export function PageCard({
       data-deleted={onOpen === undefined || undefined}
       className="relative w-full max-w-[561px] overflow-hidden pointer-coarse:min-[900px]:max-w-[639px] rounded-[24px] bg-card ring-[0.5px] ring-border has-focus-visible:ring-2 has-focus-visible:ring-ring data-deleted:bg-transparent data-deleted:opacity-70"
     >
-      {onOpen ? <PagePreview document={document} title={title} failed={failed} /> : null}
-      <div className="flex h-[73px] items-center gap-[14px] border-t border-foreground/[0.04] px-5">
+      {onOpen ? (
+        <PagePreview
+          document={document}
+          title={title}
+          failed={failed}
+          onOpen={() => {
+            openButton.current?.focus({ preventScroll: true });
+            onOpen();
+          }}
+        />
+      ) : null}
+      <div className="flex h-[73px] items-center gap-[14px] border-t border-foreground/[0.04] px-5 pointer-fine:relative">
         <PageTileIcon />
         <div className="min-w-0">
           <div className="relative top-[1px] truncate text-body-lg leading-[21px] text-foreground">
@@ -185,15 +215,16 @@ export function PageCard({
             )}
           </div>
         </div>
+        {onOpen ? (
+          <button
+            ref={openButton}
+            type="button"
+            aria-label={t`Open ${title}`}
+            onClick={onOpen}
+            className="absolute inset-0 rounded-[24px] outline-none"
+          />
+        ) : null}
       </div>
-      {onOpen ? (
-        <button
-          type="button"
-          aria-label={t`Open ${title}`}
-          onClick={onOpen}
-          className="absolute inset-0 rounded-[24px] outline-none"
-        />
-      ) : null}
     </div>
   );
 }

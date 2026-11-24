@@ -194,6 +194,51 @@ test("a day calendar fits a phone-width page while a week calendar scrolls", asy
   await captureScreenshot(page, testInfo, "page-day-calendar-phone");
 });
 
+test("a long Page scrolls in its chat card and opens from the preview", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1280, height: 860 });
+  await signup(page, `pages-scroll-${Date.now()}@rakazo.test`, "password12", "Page Reader");
+  await completeOnboarding(page);
+
+  const title = "Garden plans";
+  const source = `export default function GardenPlans() {
+    return <Page title="Garden plans" summary="A planting plan for the community garden.">
+      <Section heading="What to plant">
+        {Array.from({ length: 24 }, (_, i) => <Text key={i}>Garden bed {i + 1} has room for two rows of seedlings.</Text>)}
+      </Section>
+      <Section heading="Next steps"><Text>Water the seedlings each morning.</Text></Section>
+    </Page>;
+  }`;
+  await send(page, `call save_page with ${JSON.stringify({ title, source })}\nthen say Done.`);
+
+  const card = page.getByTestId("page-card").filter({ hasText: title });
+  await expect(card).toBeVisible({ timeout: 30_000 });
+  const preview = card.getByTestId("page-card-preview");
+  const end = pageFrame(page, title).getByText("Water the seedlings each morning.");
+  await expect(end).toBeAttached();
+  await expect
+    .poll(() => preview.evaluate((element) => element.scrollHeight - element.clientHeight))
+    .toBeGreaterThan(0);
+  await expect(end).not.toBeInViewport();
+
+  await preview.hover();
+  await page.mouse.wheel(0, 170);
+  await expect.poll(() => preview.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+
+  await page.mouse.wheel(0, 2_000);
+  await expect(end).toBeInViewport();
+  const view = page.getByTestId("page-view");
+  await expect(view).toBeHidden();
+  await captureScreenshot(page, testInfo, "page-chat-card-scrolled");
+
+  await preview.click();
+  await expect(view).toBeVisible();
+  await expect(
+    pageFrame(page, title).getByRole("heading", { name: title, level: 1 }),
+  ).toBeVisible();
+});
+
 test("shared page contents jump below the header and copy fallback", async ({
   page,
   browser,
