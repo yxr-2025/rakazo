@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { lingui } from "@lingui/vite-plugin";
 import { defineConfig } from "vitest/config";
+import { isolatedTestFiles } from "./scripts/vitest-project-paths.ts";
 
 const include = [
   ".agents/skills/*/*.test.ts",
@@ -38,14 +39,13 @@ const processes: string[] = JSON.parse(
 // stay isolated too. Database runs give every file its own database, so they never share.
 const mutatesSharedState =
   /vi\.(mock|doMock|resetModules)\(|globalThis\.\w+ *=[^=]|(globalThis|global|window)\[[^\]]+\] *=[^=]|process\.env(\.\w+|\[[^\]]+\]) *=[^=]|delete process\.env|defineProperty\((globalThis|global|window|document|navigator|process)|process\.chdir|@vitest-environment|\.prototype\.\w+ *=[^=]|stubEnv\(\s*["'`](RAKAZO_LOCAL_|RAKAZO_OPENAI_COMPATIBLE|PI_)|@hono\/node-server/;
-const isolated = include
-  .flatMap((pattern) => globSync(pattern, { cwd: root }))
-  .filter((file) => !processes.includes(file))
-  .filter(
-    (file) =>
-      process.env.COPY_TEST_DATABASE ||
-      mutatesSharedState.test(readFileSync(path.join(root, file), "utf8")),
-  );
+const isolated = isolatedTestFiles(
+  include.flatMap((pattern) => globSync(pattern, { cwd: root })),
+  processes,
+  (file) =>
+    Boolean(process.env.COPY_TEST_DATABASE) ||
+    mutatesSharedState.test(readFileSync(path.join(root, file), "utf8")),
+);
 
 export default defineConfig({
   // Mobile imports its translation catalogs as `.po` files.
