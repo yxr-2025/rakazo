@@ -3,6 +3,9 @@ import type { Prisma, PrismaClient } from "../database/client.js";
 import {
   createThreadMessage,
   createThreadMessageInTransaction,
+  loadCurrentRunImageMessages,
+  loadRunHistoryMessages,
+  loadRunSourceAttachmentMessages,
   RunHistoryWriteError,
 } from "./messages.js";
 
@@ -114,5 +117,228 @@ describe("createThreadMessage", () => {
       }),
     ).rejects.toThrow("unique constraint");
     expect(run).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("loadCurrentRunImageMessages", () => {
+  it("skips querying messages when a non-helper run has no source or steering ids", async () => {
+    const steeringFindMany = vi.fn().mockResolvedValue([]);
+    const messageFindMany = vi.fn();
+    const prisma = {
+      steeringMessage: { findMany: steeringFindMany },
+      message: { findMany: messageFindMany },
+    } as unknown as PrismaClient;
+
+    await expect(
+      loadCurrentRunImageMessages(prisma, {
+        id: "run-1",
+        threadId: "thread-1",
+        botId: "bot-1",
+        trigger: "routine",
+        sourceMessageId: null,
+      }),
+    ).resolves.toEqual([]);
+    expect(steeringFindMany).toHaveBeenCalledWith({
+      where: { runId: "run-1", botId: "bot-1" },
+      select: { messageId: true },
+    });
+    expect(messageFindMany).not.toHaveBeenCalled();
+  });
+
+  it("looks up deduplicated source and steering ids directly by id", async () => {
+    const steeringFindMany = vi
+      .fn()
+      .mockResolvedValue([{ messageId: "m-1" }, { messageId: "m-2" }]);
+    const rows = [{ id: "m-1", blocks: [{ kind: "image" }] }];
+    const messageFindMany = vi.fn().mockResolvedValue(rows);
+    const prisma = {
+      steeringMessage: { findMany: steeringFindMany },
+      message: { findMany: messageFindMany },
+    } as unknown as PrismaClient;
+
+    await expect(
+      loadCurrentRunImageMessages(prisma, {
+        id: "run-1",
+        threadId: "thread-1",
+        botId: "bot-1",
+        trigger: "user",
+        sourceMessageId: "m-1",
+      }),
+    ).resolves.toEqual(rows);
+    expect(messageFindMany).toHaveBeenCalledExactlyOnceWith({
+      where: {
+        threadId: "thread-1",
+        role: "user",
+        blocks: { array_contains: [{ kind: "image" }] },
+        id: { in: ["m-1", "m-2"] },
+      },
+      select: { id: true, blocks: true },
+      orderBy: { seq: "asc" },
+    });
+  });
+
+  it("merges and orders id and runId lookups for helper runs without duplicates", async () => {
+    const steeringFindMany = vi.fn().mockResolvedValue([{ messageId: "m-3" }]);
+    const messageFindMany = vi
+      .fn()
+      .mockResolvedValueOnce([{ id: "m-3", seq: 3, blocks: [{ kind: "image", n: 3 }] }])
+      .mockResolvedValueOnce([
+        { id: "m-1", seq: 1, blocks: [{ kind: "image", n: 1 }] },
+        { id: "m-3", seq: 3, blocks: [{ kind: "image", n: 3 }] },
+      ]);
+    const prisma = {
+      steeringMessage: { findMany: steeringFindMany },
+      message: { findMany: messageFindMany },
+    } as unknown as PrismaClient;
+
+    await expect(
+      loadCurrentRunImageMessages(prisma, {
+        id: "helper-run",
+        threadId: "thread-1",
+        botId: "bot-1",
+        trigger: "helper",
+        sourceMessageId: null,
+      }),
+    ).resolves.toEqual([
+      { id: "m-1", blocks: [{ kind: "image", n: 1 }] },
+      { id: "m-3", blocks: [{ kind: "image", n: 3 }] },
+    ]);
+    expect(messageFindMany).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ where: expect.objectContaining({ id: { in: ["m-3"] } }) }),
+    );
+    expect(messageFindMany).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ where: expect.objectContaining({ runId: "helper-run" }) }),
+    );
+  });
+});
+
+describe("loadRunSourceAttachmentMessages", () => {
+  it("skips querying messages when neither source nor claimed steering rows exist", async () => {
+    const steeringFindMany = vi.fn().mockResolvedValue([]);
+    const messageFindMany = vi.fn();
+    const prisma = {
+      steeringMessage: { findMany: steeringFindMany },
+      message: { findMany: messageFindMany },
+    } as unknown as PrismaClient;
+
+    await expect(
+      loadRunSourceAttachmentMessages(prisma, {
+        threadId: "thread-1",
+        runId: "run-1",
+        sourceMessageId: null,
+      }),
+    ).resolves.toEqual([]);
+    expect(messageFindMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("loadRunHistoryMessages", () => {
+  it("omits toolHistory selection and skips run-owner lookup when includeToolHistory is false", async () => {
+    const findMany = vi
+      .fn()
+      .mockResolvedValueOnce([
+        {
+          id: "m-2",
+          threadId: "t-1",
+          seq: 2,
+          role: "bot",
+          botId: "bot-1",
+          runId: "run-prev",
+          blocks: [],
+          authorUserId: null,
+          createdAt: new Date(0),
+          replyToMessageId: null,
+          replyQuote: null,
+          replyTo: null,
+          clientNonce: null,
+          steeringMessages: [],
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: "m-1",
+          threadId: "t-1",
+          seq: 1,
+          role: "bot",
+          botId: "bot-1",
+          runId: "run-old",
+          blocks: [],
+          authorUserId: null,
+          createdAt: new Date(0),
+          replyToMessageId: null,
+          replyQuote: null,
+          replyTo: null,
+          clientNonce: null,
+          steeringMessages: [],
+        },
+      ]);
+    const runFindMany = vi.fn();
+    const queryRaw = vi
+      .fn()
+      .mockResolvedValueOnce([{ id: "m-2" }])
+      .mockResolvedValueOnce([{ id: "m-1" }]);
+    const prisma = {
+      $queryRaw: queryRaw,
+      message: { findMany },
+      run: { findMany: runFindMany },
+    } as unknown as PrismaClient;
+
+    const loaded = await loadRunHistoryMessages(
+      prisma,
+      { id: "run-2", threadId: "t-1", botId: "bot-1", userId: "user-1" },
+      10,
+      undefined,
+      { routineId: "routine-1", earlierResults: 1 },
+      { includeToolHistory: false },
+    );
+
+    expect(findMany).toHaveBeenCalledTimes(2);
+    for (const [args] of findMany.mock.calls) {
+      expect(args.select).not.toHaveProperty("toolHistory");
+    }
+    expect(runFindMany).not.toHaveBeenCalled();
+    expect(loaded.map((message) => [message.id, message.toolHistory])).toEqual([
+      ["m-2", null],
+      ["m-1", null],
+    ]);
+  });
+
+  it("selects toolHistory and filters owners by default", async () => {
+    const findMany = vi.fn().mockResolvedValue([
+      {
+        id: "m-1",
+        threadId: "t-1",
+        seq: 1,
+        role: "bot",
+        botId: "bot-1",
+        runId: "run-other",
+        blocks: [],
+        toolHistory: '{"calls":[]}',
+        authorUserId: null,
+        createdAt: new Date(0),
+        replyToMessageId: null,
+        replyQuote: null,
+        replyTo: null,
+        clientNonce: null,
+        steeringMessages: [],
+      },
+    ]);
+    const runFindMany = vi.fn().mockResolvedValue([{ id: "run-other", userId: "user-2" }]);
+    const prisma = {
+      message: { findMany },
+      run: { findMany: runFindMany },
+    } as unknown as PrismaClient;
+
+    const loaded = await loadRunHistoryMessages(
+      prisma,
+      { id: "run-2", threadId: "t-1", botId: "bot-1", userId: "user-1" },
+      10,
+    );
+
+    expect(findMany.mock.calls[0]?.[0]?.select).toHaveProperty("toolHistory", true);
+    expect(runFindMany).toHaveBeenCalledOnce();
+    expect(loaded[0]?.toolHistory).toBeNull();
   });
 });

@@ -1364,6 +1364,7 @@ function pinnedRoutineRunPrisma(modelId: string, trigger = "routine") {
         historyCompactionGeneration: 0,
       })),
     },
+    steeringMessage: { findMany: vi.fn(async () => []) },
     message: { findMany: vi.fn(async () => []) },
     task: { findUniqueOrThrow: vi.fn(async () => ({ id: "task-1", prompt: "hello" })) },
     connection: { findMany: vi.fn(async () => []) },
@@ -1959,14 +1960,14 @@ describe("dockerComputerToolInstruction", () => {
       undefined,
       new Set(["browser_navigate", "browser_snapshot"]),
     );
-    expect(noShellAtSelection).not.toContain("Debian bookworm");
+    expect(noShellAtSelection).not.toContain("Debian trixie");
     expect(noShellAtSelection).not.toContain("`python3`");
     const shellOffered = dockerComputerToolInstruction(
       "docker",
       undefined,
       new Set(["shell", "browser_navigate", "browser_snapshot"]),
     );
-    expect(shellOffered).toContain("Debian bookworm");
+    expect(shellOffered).toContain("Debian trixie");
   });
 
   it("keeps runs without shell byte-identical to the pre-map instruction", () => {
@@ -3402,6 +3403,7 @@ description: Prepare standup notes
             historyCompactionGeneration: 0,
           })),
         },
+        steeringMessage: { findMany: vi.fn(async () => []) },
         message: { findMany: vi.fn(async () => []) },
         task: { findUniqueOrThrow: vi.fn(async () => ({ id: "task-1", prompt: "hello" })) },
         connection: { findMany: vi.fn(async () => []) },
@@ -3540,6 +3542,7 @@ description: Prepare standup notes
           historyCompactionGeneration: 0,
         })),
       },
+      steeringMessage: { findMany: vi.fn(async () => []) },
       message: { findMany: vi.fn(async () => []) },
       task: { findUniqueOrThrow: vi.fn(async () => ({ id: "task-1", prompt: "hello" })) },
       connection: { findMany: vi.fn(async () => []) },
@@ -3665,6 +3668,7 @@ description: Prepare standup notes
           historyCompactionGeneration: 0,
         })),
       },
+      steeringMessage: { findMany: vi.fn(async () => []) },
       message: { findMany: vi.fn(async () => []) },
       task: { findUniqueOrThrow: vi.fn(async () => ({ id: "task-1", prompt: "hello" })) },
       connection: { findMany: vi.fn(async () => []) },

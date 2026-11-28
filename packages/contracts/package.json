@@ -22,9 +22,9 @@
       "default": "./src/clients/network-host.ts"
     },
     "./user-devices": {
-      "types": "./src/account/user-devices.ts",
-      "development": "./src/account/user-devices.ts",
-      "default": "./src/account/user-devices.ts"
+      "types": "./src/devices/user-devices.ts",
+      "development": "./src/devices/user-devices.ts",
+      "default": "./src/devices/user-devices.ts"
     },
     "./test-timing": {
       "types": "./src/testing/timing.test-support.ts",
