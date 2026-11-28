@@ -221,14 +221,14 @@ describe("standalone web server", () => {
   });
 });
 
-it("starts when its install folder is reached through a symlink", async () => {
+it("starts when its install folder is reached through a directory link", async () => {
   const real = await realpath(await mkdtemp(path.join(tmpdir(), "rakazo-standalone-entry-")));
   cleanup.push(() => rm(real, { recursive: true, force: true }));
   const entry = path.join(real, "dist-server", "index.js");
   await mkdir(path.dirname(entry));
   await writeFile(entry, "");
   const link = `${real}-link`;
-  await symlink(real, link);
+  await symlink(real, link, process.platform === "win32" ? "junction" : "dir");
   cleanup.push(() => rm(link, { force: true }));
 
   const moduleUrl = pathToFileURL(entry).href;
