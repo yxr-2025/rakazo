@@ -110,3 +110,11 @@ export function cancelBody(body: { cancel(): Promise<void> } | null): void {
     // Ignore cancel failures.
   }
 }
+
+export function parseJson(body: string): unknown {
+  try {
+    return JSON.parse(body);
+  } catch {
+    return undefined;
+  }
+}

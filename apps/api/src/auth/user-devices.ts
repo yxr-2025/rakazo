@@ -1,15 +1,6 @@
 import { createHmac } from "node:crypto";
 import type { UserDeviceHub, UserDeviceRevokeReason, UserDevices } from "@rakazo/adapters";
-import {
-  createUserDeviceToken,
-  hashUserDeviceToken,
-  USER_DEVICE_DISCONNECT_PATH,
-  USER_DEVICE_FORWARD_PATH,
-  USER_DEVICE_LIMIT,
-  userDeviceDisconnectBody,
-  userDeviceForwardBody,
-  validUserDeviceForwardSecret,
-} from "@rakazo/adapters";
+import { createUserDeviceToken, hashUserDeviceToken, USER_DEVICE_LIMIT } from "@rakazo/adapters";
 import type { UserDeviceList, UserDevicePairResponse } from "@rakazo/contracts";
 import {
   USER_DEVICE_CONNECT_PATH,
@@ -21,9 +12,8 @@ import {
 import type { PrismaClient } from "@rakazo/db";
 import { lockOwner, recordSecurityEvent, runAsSystem } from "@rakazo/db";
 import type { Hono } from "hono";
-import { readBoundedBody } from "../http/http-body.js";
-
-const FORWARD_BODY_MAX_BYTES = 13 * 1024 * 1024;
+import { mountUserDeviceForwardingRoutes } from "../devices/desktop-forwarding.js";
+import { parseJson, readBoundedBody } from "../http/http-body.js";
 
 export interface UserDeviceRouteDeps {
   prisma: PrismaClient;
@@ -248,32 +238,5 @@ export function mountUserDeviceRoutes(app: Hono, deps: UserDeviceRouteDeps) {
     return revoked ? c.body(null, 204) : c.json({ error: "Not found" }, 404);
   });
 
-  app.post(USER_DEVICE_FORWARD_PATH, async (c) => {
-    if (!validUserDeviceForwardSecret(deps.forwardSecret, c.req.header("authorization")))
-      return c.json({ error: "Unauthorized" }, 401);
-    const body = await readBoundedBody(c.req.raw, FORWARD_BODY_MAX_BYTES);
-    if (body === null) return c.json({ error: "Request too large" }, 413);
-    const input = userDeviceForwardBody.safeParse(parseJson(body));
-    if (!input.success) return c.json({ error: "Invalid request" }, 400);
-    const { request, ...route } = input.data;
-    return deps.hub.stream(route, request, c.req.raw.signal);
-  });
-
-  app.post(USER_DEVICE_DISCONNECT_PATH, async (c) => {
-    if (!validUserDeviceForwardSecret(deps.forwardSecret, c.req.header("authorization")))
-      return c.json({ error: "Unauthorized" }, 401);
-    const body = await readBoundedBody(c.req.raw, 1024);
-    const input = userDeviceDisconnectBody.safeParse(parseJson(body ?? ""));
-    if (!input.success) return c.json({ error: "Invalid request" }, 400);
-    deps.hub.disconnect(input.data.deviceId, input.data.reason);
-    return c.body(null, 204);
-  });
-}
-
-function parseJson(body: string): unknown {
-  try {
-    return JSON.parse(body);
-  } catch {
-    return undefined;
-  }
+  mountUserDeviceForwardingRoutes(app, deps);
 }
